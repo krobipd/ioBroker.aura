@@ -38,7 +38,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build:vis": "tsc && vite build",
     "build:adapter": "tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint --cache src-vis main.js",
