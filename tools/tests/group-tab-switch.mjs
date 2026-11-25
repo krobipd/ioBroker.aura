@@ -180,14 +180,53 @@ try {
     });
     const kept = () => page.evaluate(() => window.__nodes.filter((n) => n.isConnected).length);
 
+    // The header bar is measured for the Dashboard, which renders anew on every report.
+    await page.evaluate(async () => {
+        const { useAutoHeightStore } = await import('/src-vis/store/autoHeightStore.ts');
+        window.__headers = () => useAutoHeightStore.getState().groupHeaders;
+        window.__headerReports = [];
+        useAutoHeightStore.subscribe((s, prev) => {
+            if (s.groupHeaders !== prev.groupHeaders) window.__headerReports.push({ ...s.groupHeaders });
+        });
+    });
+    const headerHeight = () => page.evaluate(() => window.__headers().open);
+    const headerReports = () => page.evaluate(() => JSON.stringify(window.__headerReports.splice(0)));
+    const bar = await headerHeight();
+    check('the header bar is measured', bar > 0, `${bar} px`);
+
     await goTo('Other');
     check('the tab is hidden, not unmounted', (await hidden()) === 'none', await hidden());
     check('the children stay mounted while the tab is hidden', (await kept()) === CHILDREN, `${await kept()}`);
+    check(
+        'a hidden header bar keeps its height',
+        (await headerHeight()) === bar,
+        `${bar} → ${await headerHeight()} px`,
+    );
 
     await goTo('Groups');
     check('the tab is back on screen', (await hidden()) !== 'none', await hidden());
     check('the same child nodes are back', (await kept()) === CHILDREN, `${await kept()} of ${CHILDREN}`);
     check('nothing was built again', (await page.evaluate(() => window.__added)) === 0);
+    const reports = await headerReports();
+    check('no header height was reported on the way there and back', reports === '[]', reports);
+
+    // A bar that really got higher while its tab was hidden is taken over.
+    await goTo('Other');
+    await page.evaluate(() => {
+        const s = document.createElement('style');
+        s.id = 'higher-bar';
+        s.textContent = '.aura-widget-open .aura-group-header { min-height: 90px; }';
+        document.head.appendChild(s);
+    });
+    await goTo('Groups');
+    check(
+        'a bar that got higher meanwhile is taken over',
+        (await headerHeight()) >= 90,
+        `${bar} → ${await headerHeight()} px`,
+    );
+    await page.evaluate(() => document.getElementById('higher-bar').remove());
+    await page.waitForTimeout(400);
+    check('and the old height when it is back', (await headerHeight()) === bar, `${await headerHeight()} px`);
 
     // Second round trip, with the window made narrower while the group is hidden.
     const wide = await childWidth();
